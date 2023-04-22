@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion : '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: An app to synchronize AWS Connect queues to a relational database
+
+
+Parameters:
+  ConnectInstanceId:
+    Type: String
+    Default: bd48b952-df03-4ac4-9250-8cd03085f79a
+  ConnectInstanceArn:
+    Type: String
+    Default: arn:aws:connect:us-east-1:105547897185:instance/bd48b952-df03-4ac4-9250-8cd03085f79a/queue/*
+  DbConnectionSecretName:
+    Type: String
+    Default: dfx5-mssql-credentials
+  RegionName:
+    Type: String
+    Default: us-east-1
+  KMSKeyArn:
+    Type: String
+    Default: arn:aws:kms:us-east-1:105547897185:key/217dfd8b-e4e4-4ca5-88e6-b6d8972778ae
+  SecretManagetArn:
+    Type: String
+    Default: arn:aws:secretsmanager:us-east-1:105547897185:secret:dfx5-mssql-credentials-FylRsJ
+  SecurityGroupId:
+    Type: String
+    Default: sg-07abc7a59740224d6
+  SubnetIds1:
+    Type: String
+    Default: subnet-0921f18c52f41efcb
+  SubnetIds2:
+    Type: String
+    Default: subnet-0466a95f18c935602
+  TableName:
+    Type: String
+    Default: queues
+  PaginationSize:
+    Type: Number
+    Default: 1
+
+
+Resources:
+  ConnectSyncFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: app.handler
+      Runtime: python3.9
+      Timeout: 60
+      CodeUri: src/
+      Policies:
+        - AWSLambdaVPCAccessExecutionRole
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Sub '${SecretManagetArn}'
+            - Effect: Allow
+              Action:
+                - kms:Decrypt
+              Resource:
+                - !Sub '${KMSKeyArn}'
+            - Effect: Allow
+              Action:
+                - connect:ListQueues
+              Resource: !Sub 'arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/${ConnectInstanceId}/queue/*'
+            - Effect: Allow
+              Action:
+                - connect:DescribeQueue
+              Resource: !Sub 'arn:aws:connect:${AWS::Region}:${AWS::AccountId}:instance/${ConnectInstanceId}/queue/*'
+      VpcConfig:
+        SecurityGroupIds:
+          - !Sub '${SecurityGroupId}'
+        SubnetIds:
+          - !Sub '${SubnetIds1}'
+          - !Sub '${SubnetIds2}'
+      Environment:
+        Variables:
+          CONNECT_INSTANCE_ID: !Ref ConnectInstanceId
+          DB_CONNECTION_SECRET_NAME: !Ref DbConnectionSecretName
+          REGION_NAME: !Ref RegionName
+
+  ConnectInstancePermissions:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: 'lambda:*'
+      FunctionName: !Ref ConnectSyncFunction
+      Principal: connect.amazonaws.com
+      SourceArn: !Sub '${ConnectInstanceArn}'
